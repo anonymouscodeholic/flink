@@ -103,6 +103,10 @@ public final class RocksDBResourceContainer implements AutoCloseable {
 		return opt;
 	}
 
+	public Long getWBMCapacity() {
+		return sharedResources != null ? sharedResources.getSize() : null;
+	}
+
 	/**
 	 * Gets the RocksDB {@link ColumnFamilyOptions} to be used for all RocksDB instances.
 	 */

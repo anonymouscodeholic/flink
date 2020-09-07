@@ -18,14 +18,8 @@
 
 package org.apache.flink.contrib.streaming.state.restore;
 
-import org.apache.flink.contrib.streaming.state.RocksDBIncrementalCheckpointUtils;
-import org.apache.flink.contrib.streaming.state.RocksDBKeySerializationUtils;
+import org.apache.flink.contrib.streaming.state.*;
 import org.apache.flink.contrib.streaming.state.RocksDBKeyedStateBackend.RocksDbKvStateInfo;
-import org.apache.flink.contrib.streaming.state.RocksDBNativeMetricOptions;
-import org.apache.flink.contrib.streaming.state.RocksDBOperationUtils;
-import org.apache.flink.contrib.streaming.state.RocksDBStateDownloader;
-import org.apache.flink.contrib.streaming.state.RocksDBWriteBatchWrapper;
-import org.apache.flink.contrib.streaming.state.RocksIteratorWrapper;
 import org.apache.flink.contrib.streaming.state.ttl.RocksDbTtlCompactFiltersManager;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.core.memory.DataInputView;
@@ -110,7 +104,8 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 		MetricGroup metricGroup,
 		@Nonnull Collection<KeyedStateHandle> restoreStateHandles,
 		@Nonnull RocksDbTtlCompactFiltersManager ttlCompactFiltersManager,
-		@Nonnegative long writeBatchSize) {
+		@Nonnegative long writeBatchSize,
+		Long writeBufferManagerCapacity) {
 		super(keyGroupRange,
 			keyGroupPrefixBytes,
 			numberOfTransferringThreads,
@@ -125,7 +120,8 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 			nativeMetricOptions,
 			metricGroup,
 			restoreStateHandles,
-			ttlCompactFiltersManager);
+			ttlCompactFiltersManager,
+			writeBufferManagerCapacity);
 		this.operatorIdentifier = operatorIdentifier;
 		this.restoredSstFiles = new TreeMap<>();
 		this.lastCompletedCheckpointId = -1L;
@@ -201,7 +197,7 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 	private void restoreFromLocalState(IncrementalLocalKeyedStateHandle localKeyedStateHandle) throws Exception {
 		KeyedBackendSerializationProxy<K> serializationProxy = readMetaData(localKeyedStateHandle.getMetaDataState());
 		List<StateMetaInfoSnapshot> stateMetaInfoSnapshots = serializationProxy.getStateMetaInfoSnapshots();
-		columnFamilyDescriptors = createAndRegisterColumnFamilyDescriptors(stateMetaInfoSnapshots, true);
+		columnFamilyDescriptors = createAndRegisterColumnFamilyDescriptors(stateMetaInfoSnapshots, true, writeBufferManagerCapacity);
 		columnFamilyHandles = new ArrayList<>(columnFamilyDescriptors.size() + 1);
 
 		Path restoreSourcePath = localKeyedStateHandle.getDirectoryStateHandle().getDirectory();
@@ -422,7 +418,7 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 		List<StateMetaInfoSnapshot> stateMetaInfoSnapshots = serializationProxy.getStateMetaInfoSnapshots();
 
 		List<ColumnFamilyDescriptor> columnFamilyDescriptors =
-			createAndRegisterColumnFamilyDescriptors(stateMetaInfoSnapshots, false);
+			createAndRegisterColumnFamilyDescriptors(stateMetaInfoSnapshots, false, writeBufferManagerCapacity);
 
 		List<ColumnFamilyHandle> columnFamilyHandles =
 			new ArrayList<>(stateMetaInfoSnapshots.size() + 1);
@@ -442,7 +438,8 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 	 */
 	private List<ColumnFamilyDescriptor> createAndRegisterColumnFamilyDescriptors(
 		List<StateMetaInfoSnapshot> stateMetaInfoSnapshots,
-		boolean registerTtlCompactFilter) {
+		boolean registerTtlCompactFilter,
+		Long writeBufferManagerCapacity) {
 
 		List<ColumnFamilyDescriptor> columnFamilyDescriptors =
 			new ArrayList<>(stateMetaInfoSnapshots.size());
@@ -451,7 +448,10 @@ public class RocksDBIncrementalRestoreOperation<K> extends AbstractRocksDBRestor
 			RegisteredStateMetaInfoBase metaInfoBase =
 				RegisteredStateMetaInfoBase.fromMetaInfoSnapshot(stateMetaInfoSnapshot);
 			ColumnFamilyDescriptor columnFamilyDescriptor = RocksDBOperationUtils.createColumnFamilyDescriptor(
-				metaInfoBase, columnFamilyOptionsFactory, registerTtlCompactFilter ? ttlCompactFiltersManager : null);
+				metaInfoBase, columnFamilyOptionsFactory, registerTtlCompactFilter ? ttlCompactFiltersManager : null,
+				writeBufferManagerCapacity);
+
+
 			columnFamilyDescriptors.add(columnFamilyDescriptor);
 		}
 		return columnFamilyDescriptors;

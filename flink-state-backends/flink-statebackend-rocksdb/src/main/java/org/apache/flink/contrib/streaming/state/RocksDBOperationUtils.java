@@ -131,22 +131,23 @@ public class RocksDBOperationUtils {
 		RegisteredStateMetaInfoBase metaInfoBase,
 		RocksDB db,
 		Function<String, ColumnFamilyOptions> columnFamilyOptionsFactory,
-		@Nullable RocksDbTtlCompactFiltersManager ttlCompactFiltersManager) {
+		@Nullable RocksDbTtlCompactFiltersManager ttlCompactFiltersManager, Long writeBufferManagerCapacity) {
 
 		ColumnFamilyDescriptor columnFamilyDescriptor = createColumnFamilyDescriptor(
-			metaInfoBase, columnFamilyOptionsFactory, ttlCompactFiltersManager);
+			metaInfoBase, columnFamilyOptionsFactory, ttlCompactFiltersManager, writeBufferManagerCapacity);
 		return new RocksDBKeyedStateBackend.RocksDbKvStateInfo(createColumnFamily(columnFamilyDescriptor, db), metaInfoBase);
 	}
 
 	/**
-	 * Creates a column descriptor for sate column family.
+	 * Creates a column descriptor for a state column family.
 	 *
 	 * <p>Sets TTL compaction filter if {@code ttlCompactFiltersManager} is not {@code null}.
 	 */
 	public static ColumnFamilyDescriptor createColumnFamilyDescriptor(
 		RegisteredStateMetaInfoBase metaInfoBase,
 		Function<String, ColumnFamilyOptions> columnFamilyOptionsFactory,
-		@Nullable RocksDbTtlCompactFiltersManager ttlCompactFiltersManager) {
+		@Nullable RocksDbTtlCompactFiltersManager ttlCompactFiltersManager,
+		Long writeBufferManagerCapacity) {
 
 		ColumnFamilyOptions options = createColumnFamilyOptions(columnFamilyOptionsFactory, metaInfoBase.getName());
 		if (ttlCompactFiltersManager != null) {
@@ -156,7 +157,24 @@ public class RocksDBOperationUtils {
 		Preconditions.checkState(!Arrays.equals(RocksDB.DEFAULT_COLUMN_FAMILY, nameBytes),
 			"The chosen state name 'default' collides with the name of the default column family!");
 
+		if (writeBufferManagerCapacity != null) {
+			throwExceptionIfTooSmallArenaBlockSize(options.writeBufferSize(), options.arenaBlockSize(), writeBufferManagerCapacity);
+		}
+
 		return new ColumnFamilyDescriptor(nameBytes, options);
+	}
+
+	public static void throwExceptionIfTooSmallArenaBlockSize(long writeBufferSize, long arenaBlockSizeConfigured, long writeBufferManagerCapacity) throws IllegalStateException {
+		long defaultArenaBlockSize = RocksDBMemoryControllerUtils.calculateRocksDBDefaultArenaBlockSize(writeBufferSize);
+		long arenaBlockSize = arenaBlockSizeConfigured <= 0 ? defaultArenaBlockSize : arenaBlockSizeConfigured;
+		long mutableLimit = RocksDBMemoryControllerUtils.calculateRocksDBMutableLimit(writeBufferManagerCapacity);
+		if (!RocksDBMemoryControllerUtils.validateArenaBlockSize(arenaBlockSize, mutableLimit)) {
+			throw new IllegalStateException(String.format(
+				"arenaBlockSize %d < mutableLimit %d (writeBufferSize %d arenaBlockSizeConfigured %d defaultArenaBlockSize %d writeBufferManagerCapacity %d). " +
+					"RocksDB would flush memtable constantly. Refusing to start. " +
+					"You can 1) make arena block size smaller, 2) decrease parallelism (if possible), 3) increase managed memory",
+				arenaBlockSize, mutableLimit, writeBufferSize, arenaBlockSizeConfigured, defaultArenaBlockSize, writeBufferManagerCapacity));
+		}
 	}
 
 	public static ColumnFamilyOptions createColumnFamilyOptions(
@@ -188,9 +206,9 @@ public class RocksDBOperationUtils {
 
 	@Nullable
 	public static OpaqueMemoryResource<RocksDBSharedResources> allocateSharedCachesIfConfigured(
-			RocksDBMemoryConfiguration memoryConfig,
-			MemoryManager memoryManager,
-			Logger logger) throws IOException {
+		RocksDBMemoryConfiguration memoryConfig,
+		MemoryManager memoryManager,
+		Logger logger) throws IOException {
 
 		if (!memoryConfig.isUsingFixedMemoryPerSlot() && !memoryConfig.isUsingManagedMemory()) {
 			return null;
@@ -219,7 +237,6 @@ public class RocksDBOperationUtils {
 			throw new IOException("Failed to acquire shared cache resource for RocksDB", e);
 		}
 	}
-
 	private static void throwExceptionIfPathLengthExceededOnWindows(String path, Exception cause) throws IOException {
 		// max directory path length on Windows is 247.
 		// the maximum path length is 260, subtracting one file name length (12 chars) and one NULL terminator.
