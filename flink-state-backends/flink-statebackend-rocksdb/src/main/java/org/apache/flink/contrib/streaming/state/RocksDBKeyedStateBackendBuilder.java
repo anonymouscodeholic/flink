@@ -411,7 +411,7 @@ public class RocksDBKeyedStateBackendBuilder<K> extends AbstractKeyedStateBacken
 				restoreStateHandles,
 				ttlCompactFiltersManager,
 				writeBatchSize,
-				optionsContainer.getWBMCapacity());
+				optionsContainer.getWriteBufferManagerCapacity());
 		} else {
 			return new RocksDBFullRestoreOperation<>(
 				keyGroupRange,

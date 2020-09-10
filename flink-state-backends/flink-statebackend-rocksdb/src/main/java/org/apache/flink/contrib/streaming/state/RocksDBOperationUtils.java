@@ -36,6 +36,7 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
@@ -52,6 +53,7 @@ import static org.apache.flink.contrib.streaming.state.RocksDBKeyedStateBackend.
  * Utils for RocksDB Operations.
  */
 public class RocksDBOperationUtils {
+	private static final Logger LOG = LoggerFactory.getLogger(RocksDBOperationUtils.class);
 
 	private static final String MANAGED_MEMORY_RESOURCE_ID = "state-rocks-managed-memory";
 
@@ -158,22 +160,39 @@ public class RocksDBOperationUtils {
 			"The chosen state name 'default' collides with the name of the default column family!");
 
 		if (writeBufferManagerCapacity != null) {
-			throwExceptionIfTooSmallArenaBlockSize(options.writeBufferSize(), options.arenaBlockSize(), writeBufferManagerCapacity);
+			// It'd be great to perform the check earlier, e.g. when creating write buffer manager.
+			// Unfortunately the check needs write buffer size that was just calculated.
+			sanityCheckArenaBlockSize(options.writeBufferSize(), options.arenaBlockSize(), writeBufferManagerCapacity);
 		}
 
 		return new ColumnFamilyDescriptor(nameBytes, options);
 	}
 
-	public static void throwExceptionIfTooSmallArenaBlockSize(long writeBufferSize, long arenaBlockSizeConfigured, long writeBufferManagerCapacity) throws IllegalStateException {
+	/**
+	 * Logs a warning of the arena block size is too high causing RocksDB to flush constantly.
+	 * Essentially, the condition here
+	 * <a href="https://github.com/dataArtisans/frocksdb/blob/49bc897d5d768026f1eb816d960c1f2383396ef4/include/rocksdb/write_buffer_manager.h#L47">
+	 * will always be true.
+	 *
+	 * @param writeBufferSize the size of write buffer (bytes)
+	 * @param arenaBlockSizeConfigured the manually configured arena block size
+	 * @param writeBufferManagerCapacity the size of the write buffer manager (bytes)
+	 * @return true is sanity check passes, false otherwise
+	 */
+	public static boolean sanityCheckArenaBlockSize(long writeBufferSize, long arenaBlockSizeConfigured, long writeBufferManagerCapacity) throws IllegalStateException {
 		long defaultArenaBlockSize = RocksDBMemoryControllerUtils.calculateRocksDBDefaultArenaBlockSize(writeBufferSize);
 		long arenaBlockSize = arenaBlockSizeConfigured <= 0 ? defaultArenaBlockSize : arenaBlockSizeConfigured;
 		long mutableLimit = RocksDBMemoryControllerUtils.calculateRocksDBMutableLimit(writeBufferManagerCapacity);
-		if (!RocksDBMemoryControllerUtils.validateArenaBlockSize(arenaBlockSize, mutableLimit)) {
-			throw new IllegalStateException(String.format(
-				"arenaBlockSize %d < mutableLimit %d (writeBufferSize %d arenaBlockSizeConfigured %d defaultArenaBlockSize %d writeBufferManagerCapacity %d). " +
-					"RocksDB would flush memtable constantly. Refusing to start. " +
-					"You can 1) make arena block size smaller, 2) decrease parallelism (if possible), 3) increase managed memory",
-				arenaBlockSize, mutableLimit, writeBufferSize, arenaBlockSizeConfigured, defaultArenaBlockSize, writeBufferManagerCapacity));
+		if (RocksDBMemoryControllerUtils.validateArenaBlockSize(arenaBlockSize, mutableLimit)) {
+			return true;
+		} else {
+			LOG.warn("RocksDBStateBackend performance will be poor because of the current Flink memory configuration! " +
+					"RocksDB will flush memtable constantly, causing high IO and CPU. " +
+					"Typically the easiest fix is to increase task manager managed memory size. " +
+					"If running locally, see the parameter taskmanager.memory.managed.size." +
+					"Details: arenaBlockSize %d < mutableLimit %d (writeBufferSize %d arenaBlockSizeConfigured %d defaultArenaBlockSize %d writeBufferManagerCapacity %d)",
+					arenaBlockSize, mutableLimit, writeBufferSize, arenaBlockSizeConfigured, defaultArenaBlockSize, writeBufferManagerCapacity);
+			return false;
 		}
 	}
 
