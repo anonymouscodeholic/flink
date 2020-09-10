@@ -91,10 +91,12 @@ public class RocksDBMemoryControllerUtilsTest {
 		long totalMemorySize = 2048L;
 		double writeBufferRatio = 0.5;
 		double highPriPoolRatio = 0.1;
-		RocksDBMemoryControllerUtils.allocateRocksDBSharedResources(totalMemorySize, writeBufferRatio, highPriPoolRatio);
+		RocksDBSharedResources rocksDBSharedResources = RocksDBMemoryControllerUtils.allocateRocksDBSharedResources(totalMemorySize, writeBufferRatio, highPriPoolRatio);
 		long expectedCacheCapacity = RocksDBMemoryControllerUtils.calculateActualCacheCapacity(totalMemorySize, writeBufferRatio);
 		long expectedWbmCapacity = RocksDBMemoryControllerUtils.calculateWriteBufferManagerCapacity(totalMemorySize, writeBufferRatio);
+
 		assertThat(actualCacheCapacity.get(), is(expectedCacheCapacity));
 		assertThat(actualWbmCapacity.get(), is(expectedWbmCapacity));
+		assertThat(rocksDBSharedResources.getWriteBufferManagerCapacity(), is(expectedWbmCapacity));
 	}
 }
