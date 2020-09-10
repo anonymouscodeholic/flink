@@ -189,8 +189,8 @@ public class RocksDBOperationUtils {
 			LOG.warn("RocksDBStateBackend performance will be poor because of the current Flink memory configuration! " +
 					"RocksDB will flush memtable constantly, causing high IO and CPU. " +
 					"Typically the easiest fix is to increase task manager managed memory size. " +
-					"If running locally, see the parameter taskmanager.memory.managed.size." +
-					"Details: arenaBlockSize %d < mutableLimit %d (writeBufferSize %d arenaBlockSizeConfigured %d defaultArenaBlockSize %d writeBufferManagerCapacity %d)",
+					"If running locally, see the parameter taskmanager.memory.managed.size. " +
+					"Details: arenaBlockSize {} < mutableLimit {} (writeBufferSize {} arenaBlockSizeConfigured {} defaultArenaBlockSize {} writeBufferManagerCapacity {})",
 					arenaBlockSize, mutableLimit, writeBufferSize, arenaBlockSizeConfigured, defaultArenaBlockSize, writeBufferManagerCapacity);
 			return false;
 		}

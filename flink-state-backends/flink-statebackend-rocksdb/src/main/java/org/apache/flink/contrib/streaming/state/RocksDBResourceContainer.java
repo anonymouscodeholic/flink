@@ -109,7 +109,11 @@ public final class RocksDBResourceContainer implements AutoCloseable {
 	 * @return the capacity, or null if write buffer managed is not enabled (not using managed memory).
 	 */
 	public Long getWriteBufferManagerCapacity() {
-		return sharedResources != null ? sharedResources.getSize() : null;
+		if (sharedResources == null) {
+			return null;
+		}
+
+		return sharedResources.getResourceHandle().getWriteBufferManagerCapacity();
 	}
 
 	/**

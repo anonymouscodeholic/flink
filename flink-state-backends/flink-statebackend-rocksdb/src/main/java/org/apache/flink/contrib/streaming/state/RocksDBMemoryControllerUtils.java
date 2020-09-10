@@ -43,7 +43,7 @@ public class RocksDBMemoryControllerUtils {
 		long writeBufferManagerCapacity = RocksDBMemoryControllerUtils.calculateWriteBufferManagerCapacity(totalMemorySize, writeBufferRatio);
 		final WriteBufferManager wbm = RocksDBMemoryControllerUtils.createWriteBufferManager(writeBufferManagerCapacity, cache);
 
-		return new RocksDBSharedResources(cache, wbm);
+		return new RocksDBSharedResources(cache, wbm, writeBufferManagerCapacity);
 	}
 
 	/**
@@ -100,7 +100,7 @@ public class RocksDBMemoryControllerUtils {
 	 * <a href="https://github.com/dataArtisans/frocksdb/blob/49bc897d5d768026f1eb816d960c1f2383396ef4/db/column_family.cc#L196"/>
 	 *
 	 * @return the default arena block size
-	 * @param writeBufferSize
+	 * @param writeBufferSize the write buffer size (bytes)
 	 */
 	static long calculateRocksDBDefaultArenaBlockSize(long writeBufferSize) {
 		return writeBufferSize / 8;
